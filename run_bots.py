@@ -1,51 +1,64 @@
-import asyncio
-import subprocess
+# Debug imports and startup
+import os
 import sys
-import logging
+import traceback
 
-# Configure logging
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger(__name__)
+print("Starting Ticket Genie bots...")
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
 
-async def run_bot(bot_file):
+# Check environment variables
+print("Checking environment variables...")
+supabase_url = os.environ.get('SUPABASE_URL')
+supabase_key = os.environ.get('SUPABASE_SERVICE_KEY')
+print(f"SUPABASE_URL: {'SET' if supabase_url else 'NOT SET'}")
+print(f"SUPABASE_SERVICE_KEY: {'SET' if supabase_key else 'NOT SET'}")
+
+try:
+	print("Importing modules...")
+	import threading
+	import time
+	
+	print("Importing bot modules...")
+	import house_seats_bot
+	import fill_a_seat_bot
+	
+	print("All imports successful!")
+	
+	def run_house_seats_bot():
+		try:
+			print("Starting HouseSeats bot...")
+			house_seats_bot.bot.run(os.environ.get('HOUSESEATS_DISCORD_BOT_TOKEN'))
+		except Exception as e:
+			print(f"Error in HouseSeats bot: {e}")
+			traceback.print_exc()
+
+	def run_fill_a_seat_bot():
+		try:
+			print("Starting FillASeat bot...")
+			fill_a_seat_bot.bot.run(os.environ.get('FILLASEAT_DISCORD_BOT_TOKEN'))
+		except Exception as e:
+			print(f"Error in FillASeat bot: {e}")
+			traceback.print_exc()
+
+	# Start both bots in separate threads
+	house_seats_thread = threading.Thread(target=run_house_seats_bot)
+	fill_a_seat_thread = threading.Thread(target=run_fill_a_seat_bot)
+
+	house_seats_thread.start()
+	fill_a_seat_thread.start()
+
+	print("Both bots started successfully!")
+	
+	# Keep the main thread alive
 	try:
-		process = await asyncio.create_subprocess_exec(
-			sys.executable, bot_file,
-			stdout=asyncio.subprocess.PIPE,
-			stderr=asyncio.subprocess.PIPE
-		)
-		
-		# Handle output streams
-		async def read_stream(stream, prefix):
-			while True:
-				line = await stream.readline()
-				if not line:
-					break
-				logger.info(f"{prefix}: {line.decode().strip()}")
-		
-		await asyncio.gather(
-			read_stream(process.stdout, bot_file),
-			read_stream(process.stderr, f"{bot_file} (error)")
-		)
-		
-		await process.wait()
-		
-	except Exception as e:
-		logger.error(f"Error running {bot_file}: {e}")
-		raise
+		while True:
+			time.sleep(60)
+			print("Main thread heartbeat - bots are running...")
+	except KeyboardInterrupt:
+		print("Shutting down...")
 
-async def main():
-	try:
-		# Run both bots concurrently
-		# await asyncio.gather(
-		# 	run_bot('house_seats_bot.py'),
-		# 	run_bot('fill_a_seat_bot.py')
-		# )
-		# Run only the HouseSeats bot
-		await run_bot('house_seats_bot.py')
-	except Exception as e:
-		logger.error(f"Error in main: {e}")
-		sys.exit(1)
-
-if __name__ == "__main__":
-	asyncio.run(main())
+except Exception as e:
+	print(f"Fatal error during startup: {e}")
+	traceback.print_exc()
+	sys.exit(1)

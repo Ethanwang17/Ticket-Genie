@@ -7,14 +7,27 @@ logger = logging.getLogger(__name__)
 
 class SupabaseDB:
     def __init__(self):
+        print("Initializing SupabaseDB...")
+        
         # Get Supabase credentials from environment variables
         supabase_url = os.environ.get('SUPABASE_URL')
         supabase_key = os.environ.get('SUPABASE_SERVICE_KEY')  # Use service key for backend operations
         
-        if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables must be set")
+        print(f"SUPABASE_URL: {'SET' if supabase_url else 'NOT SET'}")
+        print(f"SUPABASE_SERVICE_KEY: {'SET' if supabase_key else 'NOT SET'}")
         
-        self.client: Client = create_client(supabase_url, supabase_key)
+        if not supabase_url or not supabase_key:
+            error_msg = "SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables must be set"
+            print(f"ERROR: {error_msg}")
+            raise ValueError(error_msg)
+        
+        try:
+            print("Creating Supabase client...")
+            self.client: Client = create_client(supabase_url, supabase_key)
+            print("Supabase client created successfully!")
+        except Exception as e:
+            print(f"ERROR creating Supabase client: {e}")
+            raise
     
     def create_tables(self):
         """Create all necessary tables for both bots"""
