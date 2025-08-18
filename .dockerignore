@@ -1,0 +1,14 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.gitignore
+README.md
+SUPABASE_MIGRATION_GUIDE.md
+config.py
+.env
+requirements_backup.txt
+Procfile
