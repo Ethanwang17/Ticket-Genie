@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Disable Watchtower auto-updates
+LABEL com.centurylinklabs.watchtower.enable="false"
+
 WORKDIR /app
 
 # Install system dependencies

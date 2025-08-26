@@ -8,11 +8,11 @@ Ticket Genie is a bot-powered solution for real-time discovery of newly released
 
 ## Project Overview 📊
 
--   **95% uptime** maintained over 3+ months of continuous Heroku deployment
+-   **95% uptime** maintained over 3+ months of continuous deployment
 -   **1,000+ direct messages** sent to users with new show alerts
 -   **60% of active users** customized their notifications using the in-app blacklist feature
 
-Ticket Genie is a cloud-hosted, two-bot system that keeps a constant pulse on two invite-only ticket platforms and pushes personalized Discord alerts the moment new performances drop. Running 24/7 on Heroku with a PostgreSQL backbone, it marries fast, headless scraping with per-user preferences so members never miss limited-availability shows again.
+Ticket Genie is a cloud-hosted, two-bot system that keeps a constant pulse on two invite-only ticket platforms and pushes personalized Discord alerts the moment new performances drop. Running 24/7 with a PostgreSQL backbone, it marries fast, headless scraping with per-user preferences so members never miss limited-availability shows again.
 
 ---
 
@@ -46,13 +46,13 @@ A two-bot system (one for each platform) developed in Python, designed to run as
 
 -   **Automated Scrapers for FillASeat & House Seats:** Each bot handles login, parsing, and show extraction every 2–3 minutes.
 -   **User-Specific Notification System:** Uses slash commands and user-specific blacklists to send DM alerts only for unfiltered shows.
--   **Cloud-Based Architecture:** Deployed to Heroku using a Procfile, with persistent PostgreSQL integration and environment-based secrets for security.
+-   **Cloud-Based Architecture:** Containerized deployment with persistent PostgreSQL integration and environment-based secrets for security.
 
 ---
 
 ## Results & Impact 🚀
 
-Ticket Genie has been running continuously on Heroku, serving real-time alerts to a private Discord server. User testing confirmed increased satisfaction and decreased time spent browsing ticket websites.
+Ticket Genie has been running continuously, serving real-time alerts to a private Discord server. User testing confirmed increased satisfaction and decreased time spent browsing ticket websites.
 
 > "I used to cycle through both sites all day to see sold-out notices. Now Ticket Genie pings me and tickets are secured with no stress."
 > — Avid Ticket Genie user
@@ -65,6 +65,6 @@ Ticket Genie has been running continuously on Heroku, serving real-time alerts t
 -   Discord API
 -   PostgreSQL
 -   Selenium
--   Heroku
+-   Docker
 
 ---

@@ -10,5 +10,4 @@ README.md
 SUPABASE_MIGRATION_GUIDE.md
 config.py
 .env
-requirements_backup.txt
 Procfile
