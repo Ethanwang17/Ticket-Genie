@@ -312,9 +312,9 @@ async def scraping_task():
 	current_time = datetime.now(PST_TIMEZONE)
 	logger.info(f"HouseSeats task started at {current_time.strftime('%Y-%m-%d %H:%M:%S PST')}")
 	
-	# Check if current time is between 6 AM and 8 PM PST
-	if 6 <= current_time.hour < 10:
-		logger.info("Within operating hours (6 AM - 8 PM PST), proceeding with scraping")
+	# Check if current time is between 6 AM and 5 PM PST
+	if 6 <= current_time.hour < 17:
+		logger.info("Within operating hours (6 AM - 5 PM PST), proceeding with scraping")
 		await asyncio.to_thread(scrape_and_process)
 	else:
 		logger.info(f"Outside operating hours (current: {current_time.hour}:00 PST), skipping scrape")
