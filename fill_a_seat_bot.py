@@ -43,11 +43,18 @@ intents.members = True
 bot = discord.Bot(intents=intents)
 
 # Add logging configuration
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(
+	level=logging.INFO,
+	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+	datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
+logger.info("FillASeat Bot initializing...")
 
 # Initialize Supabase DB
+logger.info("Connecting to Supabase database...")
 db = SupabaseDB()
+logger.info("Supabase database connection established")
 
 def get_sessid(session, headers):
 	"""
@@ -63,13 +70,14 @@ def get_sessid(session, headers):
 		raise Exception("Failed to find sessid in the login form.")
 	
 	sessid = match.group(1)
-	logger.info(f"Retrieved sessid: {sessid}")
+	logger.info(f"Successfully retrieved sessid: {sessid[:8]}...")
 	return sessid
 
 def login(session, headers, sessid, username, password):
 	"""
 	Submit the login form with the provided credentials and sessid.
 	"""
+	logger.info("Attempting to login to FillASeat...")
 	payload = {
 		'sessid': sessid,
 		'username': username,
@@ -79,8 +87,10 @@ def login(session, headers, sessid, username, password):
 	
 	response = session.post(LOGIN_ACTION_URL, data=payload, headers=headers)
 	if response.status_code != 200:
+		logger.error(f"Login request failed. Status code: {response.status_code}")
 		raise Exception(f"Login request failed. Status code: {response.status_code}")
 	
+	logger.info("Login request completed successfully")
 	return response
 
 def is_login_successful(response):
@@ -89,8 +99,10 @@ def is_login_successful(response):
 	"""
 	# Example: Check if the response contains a logout link or specific user content
 	if "logout.php" in response.text.lower():
+		logger.info("FillASeat login successful - logout link found")
 		return True
 	# Add more checks as needed based on the website's response after login
+	logger.warning("FillASeat login may have failed - logout link not found")
 	return False
 
 def fetch_events(session, headers):
@@ -100,7 +112,7 @@ def fetch_events(session, headers):
 	timestamp = int(time.time() * 1000)
 	events_url = EVENTS_URL_TEMPLATE.format(timestamp=timestamp)
 	
-	logger.info(f"Fetching events from: {events_url}")
+	logger.info(f"Fetching FillASeat events...")
 	
 	response = session.get(events_url, headers=headers)
 	if response.status_code != 200:
@@ -121,15 +133,19 @@ def fetch_events(session, headers):
 	except json.JSONDecodeError as e:
 		raise Exception(f"JSON decoding failed: {e}")
 	
-	logger.info(f"Number of events: {len(events)}")
+	logger.info(f"Successfully fetched {len(events)} FillASeat events")
 	
 	return events
 
 def delete_all_fillaseat_shows():
+	logger.info("Clearing all current FillASeat shows from database")
 	db.delete_all_fillaseat_current_shows()
+	logger.info("Database cleared successfully")
 
 def insert_fillaseat_shows(shows):
+	logger.info(f"Inserting {len(shows)} current FillASeat shows into database")
 	db.insert_fillaseat_current_shows(shows)
+	logger.info("Shows inserted successfully")
 
 def initialize_database():
 	# Tables are created via Supabase dashboard/SQL
@@ -195,15 +211,19 @@ class BlacklistButton(Button):
 			logger.error(f"Error in BlacklistButton callback: {e}")
 
 def add_to_fillaseat_all_shows(shows):
+	logger.info(f"Adding {len(shows)} shows to FillASeat all shows history")
 	db.add_to_fillaseat_all_shows(shows)
+	logger.info("Shows added to history successfully")
 
 def get_existing_shows():
 	return db.get_fillaseat_existing_shows()
 
 async def notify_users_about_new_shows(new_shows):
 	if not new_shows:
+		logger.info("No new FillASeat shows to notify about")
 		return
 
+	logger.info(f"Notifying users about {len(new_shows)} new FillASeat shows")
 	# Send notifications to the channel
 	for show_id, show_info in new_shows.items():
 		embed = discord.Embed(
@@ -223,9 +243,11 @@ async def notify_users_about_new_shows(new_shows):
 				logger.error(f"Error checking image for show {show_id}: {e}")
 		
 		await send_discord_message(embeds=[embed])
+		logger.info(f"Posted FillASeat show to channel: {show_info['name']}")
 		await asyncio.sleep(1)
 
 	# Get users to notify
+	logger.info("Gathering users for DM notifications...")
 	users_to_notify = set()
 	for guild in bot.guilds:
 		async for member in guild.fetch_members(limit=None):
@@ -233,7 +255,9 @@ async def notify_users_about_new_shows(new_shows):
 				users_to_notify.add(member)
 
 	# Get blacklists and send DMs
+	logger.info(f"Found {len(users_to_notify)} users to potentially notify")
 	user_blacklists = db.get_fillaseat_user_blacklists_for_shows(list(new_shows.keys()))
+	logger.info(f"Retrieved blacklists for {len(user_blacklists)} users")
 
 	for user in users_to_notify:
 		blacklisted_show_ids = user_blacklists.get(user.id, set())
@@ -254,16 +278,21 @@ async def notify_users_about_new_shows(new_shows):
 			await send_user_dm(user, embed, view)
 			await asyncio.sleep(1)
 
+	logger.info("Completed FillASeat show notifications to all users")
+
 @tasks.loop(minutes=random.randint(2, 3))
 async def fillaseat_task():
 	current_time = datetime.now(PST_TIMEZONE)
+	logger.info(f"FillASeat task started at {current_time.strftime('%Y-%m-%d %H:%M:%S PST')}")
 	if 6 <= current_time.hour < 17:
+		logger.info("Within operating hours (6 AM - 5 PM PST), proceeding with scraping")
 		try:
 			# Get sessid and login
 			sessid = get_sessid(session, headers)
 			login_response = login(session, headers, sessid, USERNAME, PASSWORD)
 			
 			if is_login_successful(login_response):
+				logger.info("FillASeat authentication successful, fetching events...")
 				events = fetch_events(session, headers)
 				current_shows = {}
 				
@@ -285,6 +314,7 @@ async def fillaseat_task():
 				# Find new shows
 				new_show_ids = set(current_shows.keys()) - set(existing_shows.keys())
 				new_shows = {show_id: current_shows[show_id] for show_id in new_show_ids}
+				logger.info(f"Found {len(new_shows)} new shows out of {len(current_shows)} total shows")
 				
 				# Update database
 				add_to_fillaseat_all_shows(current_shows)
@@ -293,18 +323,30 @@ async def fillaseat_task():
 				
 				# Notify users about new shows
 				if new_shows:
+					logger.info("New shows found! Preparing notifications...")
 					# Add small delay to allow images to become available
 					await asyncio.sleep(5)
 					await notify_users_about_new_shows(new_shows)
+				else:
+					logger.info("No new shows found in this cycle")
+			else:
+				logger.error("FillASeat login failed, skipping this cycle")
+	else:
+		logger.info(f"Outside operating hours (current: {current_time.hour}:00 PST), skipping scrape")
 			
-		except Exception as e:
-			logger.error(f"An error occurred in fillaseat_task: {e}")
-			await send_discord_message(f"Error in FillASeat bot: {e}")
+	except Exception as e:
+		logger.error(f"An error occurred in fillaseat_task: {e}", exc_info=True)
+		await send_discord_message(f"Error in FillASeat bot: {e}")
+	finally:
+		logger.info("FillASeat task cycle completed")
 
 @fillaseat_task.before_loop
 async def before_fillaseat_task():
+	logger.info("Waiting for FillASeat bot to be ready...")
 	await bot.wait_until_ready()
+	logger.info("FillASeat bot is ready, initializing database...")
 	initialize_database()  # Initialize the database before starting the task
+	logger.info("FillASeat database initialized, starting periodic task...")
 
 # Add your slash commands here
 @bot.slash_command(name="fillaseat_blacklist_add", description="Add a show to your FillASeat blacklist")
@@ -431,6 +473,28 @@ async def fillaseat_current_shows(ctx):
 		logger.error(f"Error fetching current FillASeat shows: {e}")
 		await ctx.respond("An error occurred while fetching the shows.", ephemeral=True)
 
+# Bot event handlers
+@bot.event
+async def on_ready():
+	logger.info(f"FillASeat Bot logged in as {bot.user} (ID: {bot.user.id})")
+	logger.info(f"Bot is connected to {len(bot.guilds)} guild(s)")
+	for guild in bot.guilds:
+		logger.info(f"  - {guild.name} (ID: {guild.id}) - {guild.member_count} members")
+
+@bot.event
+async def on_connect():
+	logger.info("FillASeat Bot connected to Discord")
+
+@bot.event
+async def on_disconnect():
+	logger.warning("FillASeat Bot disconnected from Discord")
+
+@bot.event
+async def on_resumed():
+	logger.info("FillASeat Bot resumed connection to Discord")
+
 # Start the task and run the bot
+logger.info("Starting FillASeat periodic task...")
 fillaseat_task.start()
+logger.info("Starting FillASeat Discord bot...")
 bot.run(DISCORD_BOT_TOKEN)

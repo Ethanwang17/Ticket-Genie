@@ -19,9 +19,14 @@ HOUSESEATS_PASSWORD = os.environ.get('HOUSESEATS_PASSWORD')
 DISCORD_BOT_TOKEN = os.environ.get('HOUSESEATS_DISCORD_BOT_TOKEN')
 DISCORD_CHANNEL_ID = int(os.environ.get('HOUSESEATS_DISCORD_CHANNEL_ID'))
 
-# Set logging level to WARNING to reduce output
-logging.basicConfig(level=logging.WARNING)
+# Set enhanced logging configuration
+logging.basicConfig(
+	level=logging.INFO,
+	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+	datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
+logger.info("HouseSeats Bot initializing...")
 
 # Initialize Discord bot with necessary intents and application commands
 intents = discord.Intents.default()
@@ -33,19 +38,30 @@ bot = discord.Bot(intents=intents)
 PST_TIMEZONE = pytz.timezone('America/Los_Angeles')
 
 # Initialize Supabase DB
+logger.info("Connecting to Supabase database...")
 db = SupabaseDB()
+logger.info("Supabase database connection established")
 
 def get_existing_shows():
-	return db.get_houseseats_existing_shows()
+	logger.info("Retrieving existing shows from database...")
+	existing = db.get_houseseats_existing_shows()
+	logger.info(f"Retrieved {len(existing)} existing shows")
+	return existing
 
 def delete_all_current_houseseats_shows():
+	logger.info("Clearing all current HouseSeats shows from database")
 	db.delete_all_houseseats_current_shows()
+	logger.info("Current shows cleared successfully")
 
 def insert_all_current_houseseats_shows(shows):
+	logger.info(f"Inserting {len(shows)} current HouseSeats shows into database")
 	db.insert_houseseats_current_shows(shows)
+	logger.info("Current shows inserted successfully")
 
 def add_to_houseseats_all_shows(shows):
+	logger.info(f"Adding {len(shows)} shows to HouseSeats all shows history")
 	db.add_to_houseseats_all_shows(shows)
+	logger.info("Shows added to history successfully")
 
 def initialize_database():
 	# Tables are created via Supabase dashboard/SQL
@@ -79,6 +95,7 @@ async def send_user_dm(user: discord.User, embed: discord.Embed, view: View = No
 		logger.error(f"Error sending DM to user {user.id}: {e}")
 
 def scrape_and_process():
+	logger.info("Starting HouseSeats scrape and process cycle")
 	# Initialize the database
 	initialize_database()
 
@@ -107,18 +124,24 @@ def scrape_and_process():
 		}
 
 		# Send POST request to login
+		logger.info("Attempting to login to HouseSeats...")
 		response = session.post(login_url, data=login_data, headers=headers)
 		
 		if response.status_code != 200:
+			logger.error(f"HouseSeats login failed with status code: {response.status_code}")
 			raise Exception(f"Login failed with status code: {response.status_code}")
+		
+		logger.info("HouseSeats login successful")
 
 		# Fetch the upcoming shows page
+		logger.info("Fetching upcoming shows from HouseSeats...")
 		shows_url = 'https://lv.houseseats.com/member/ajax/upcoming-shows.bv?supersecret=&search=&sortField=&startMonthYear=&endMonthYear=&startDate=&endDate=&start=0'
 		shows_response = session.get(shows_url, headers=headers)
 		
 		# Find all show titles and IDs within h1 tags
 		pattern = r'<h1><a href="./tickets/view/\?showid=(\d+)">(.*?)</a></h1>'
 		shows = re.findall(pattern, shows_response.text)
+		logger.info(f"Found {len(shows)} shows on HouseSeats page")
 		
 		# Create dictionary for scraped shows
 		scraped_shows_dict = {}
@@ -134,7 +157,10 @@ def scrape_and_process():
 					'image_url': image_url
 				}
 
+		logger.info(f"Processed {len(scraped_shows_dict)} valid HouseSeats shows")
+
 		# After scraping shows and before checking for new ones
+		logger.info("Adding shows to HouseSeats history...")
 		add_to_houseseats_all_shows(scraped_shows_dict)
 
 		# Get existing shows from the database
@@ -145,25 +171,33 @@ def scrape_and_process():
 		scraped_show_ids = set(scraped_shows_dict.keys())
 		new_show_ids = scraped_show_ids - existing_show_ids
 		new_shows = {show_id: scraped_shows_dict[show_id] for show_id in new_show_ids}
+		logger.info(f"Found {len(new_shows)} new shows out of {len(scraped_shows_dict)} total shows")
 
 		# Now erase the database and rewrite it with all the shows just found
+		logger.info("Updating current shows in database...")
 		delete_all_current_houseseats_shows()
 		insert_all_current_houseseats_shows(scraped_shows_dict)
+		logger.info("Database updated successfully")
 
 		# Notify users via DMs if there are new shows
 		if new_shows:
+			logger.info("New shows found! Starting user notifications...")
 			asyncio.run_coroutine_threadsafe(
 				notify_users_about_new_shows(new_shows),
 				bot.loop
 			)
+		else:
+			logger.info("No new shows found in this cycle")
 
 	except Exception as e:
-		error_message = f"An error occurred: {e}"
-		logger.error(error_message)
+		error_message = f"An error occurred in HouseSeats scraping: {e}"
+		logger.error(error_message, exc_info=True)
 		asyncio.run_coroutine_threadsafe(
 			send_discord_message(message_text=error_message),
 			bot.loop
 		)
+	finally:
+		logger.info("HouseSeats scrape and process cycle completed")
 
 # Modify the BlacklistButton class to include show_name
 class BlacklistButton(Button):
@@ -206,7 +240,7 @@ class BlacklistButton(Button):
 active_views = []
 
 async def notify_users_about_new_shows(new_shows):
-	logger.debug(f"Notifying users about {len(new_shows)} new shows")
+	logger.info(f"Notifying users about {len(new_shows)} new HouseSeats shows")
 
 	# Send public notification to the main channel
 	for show_id, show_info in new_shows.items():
@@ -219,24 +253,28 @@ async def notify_users_about_new_shows(new_shows):
 			embed.set_image(url=show_info['image_url'])
 		
 		await send_discord_message(embeds=[embed])
+		logger.info(f"Posted HouseSeats show to channel: {show_info['name']}")
 		# Add a short delay to respect rate limits
 		await asyncio.sleep(1)
 
 	# Continue with existing DM notification logic...
+	logger.info("Gathering users for DM notifications...")
 	users_to_notify = set()
 	for guild in bot.guilds:
 		async for member in guild.fetch_members(limit=None):
 			if not member.bot:
 				users_to_notify.add(member)
 
+	logger.info(f"Found {len(users_to_notify)} users to potentially notify")
+
 	# Fetch blacklists
 	user_blacklists = db.get_houseseats_user_blacklists_for_shows(list(new_shows.keys()))
+	logger.info(f"Retrieved blacklists for {len(user_blacklists)} users")
 
 	# Iterate over users and send DMs excluding blacklisted shows
 	for user in users_to_notify:
 		blacklisted_show_ids = user_blacklists.get(user.id, set())
 		shows_to_notify = {show_id: info for show_id, info in new_shows.items() if show_id not in blacklisted_show_ids}
-		logger.debug(f"User {user.id} will be notified about shows: {list(shows_to_notify.keys())}")
 		if shows_to_notify:
 			for show_id, show_info in shows_to_notify.items():
 				embed = discord.Embed(
@@ -266,22 +304,51 @@ async def notify_users_about_new_shows(new_shows):
 				await send_user_dm(user, embed, view)
 				await asyncio.sleep(1)
 
+	logger.info("Completed HouseSeats show notifications to all users")
+
 @tasks.loop(minutes=random.randint(2, 3))
 async def scraping_task():
 	# Get current time in PST
 	current_time = datetime.now(PST_TIMEZONE)
+	logger.info(f"HouseSeats task started at {current_time.strftime('%Y-%m-%d %H:%M:%S PST')}")
 	
-	# Check if current time is between 6 AM and 5 PM PST
+	# Check if current time is between 6 AM and 8 PM PST
 	if 6 <= current_time.hour < 20:
+		logger.info("Within operating hours (6 AM - 8 PM PST), proceeding with scraping")
 		await asyncio.to_thread(scrape_and_process)
 	else:
-		logger.debug("Outside of operating hours (8 AM - 5 PM PST). Skipping scrape.")
+		logger.info(f"Outside operating hours (current: {current_time.hour}:00 PST), skipping scrape")
+	
+	logger.info("HouseSeats task cycle completed")
 
 @scraping_task.before_loop
 async def before_scraping_task():
+	logger.info("Waiting for HouseSeats bot to be ready...")
 	await bot.wait_until_ready()
+	logger.info("HouseSeats bot is ready, starting periodic scraping task...")
+
+# Bot event handlers
+@bot.event
+async def on_ready():
+	logger.info(f"HouseSeats Bot logged in as {bot.user} (ID: {bot.user.id})")
+	logger.info(f"Bot is connected to {len(bot.guilds)} guild(s)")
+	for guild in bot.guilds:
+		logger.info(f"  - {guild.name} (ID: {guild.id}) - {guild.member_count} members")
+
+@bot.event
+async def on_connect():
+	logger.info("HouseSeats Bot connected to Discord")
+
+@bot.event
+async def on_disconnect():
+	logger.warning("HouseSeats Bot disconnected from Discord")
+
+@bot.event
+async def on_resumed():
+	logger.info("HouseSeats Bot resumed connection to Discord")
 
 # Start the task when the bot is ready
+logger.info("Starting HouseSeats periodic scraping task...")
 scraping_task.start()
 
 @bot.slash_command(name="blacklist_add", description="Add a show to your blacklist")
@@ -408,4 +475,5 @@ async def current_shows(ctx):
 		await ctx.respond("An error occurred while fetching the shows.", ephemeral=True)
 
 # Run the bot
+logger.info("Starting HouseSeats Discord bot...")
 bot.run(DISCORD_BOT_TOKEN)
