@@ -28,6 +28,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info("HouseSeats Bot initializing...")
 
+# Add Pushover notification function
+def send_pushover_notification(message, title=None, url=None, image_url=None):
+    user_key = os.environ.get('PUSHOVER_USER_KEY')
+    api_token = os.environ.get('PUSHOVER_API_TOKEN')
+    
+    if not user_key or not api_token:
+        # Silently return if keys aren't set to avoid log spam
+        return
+
+    data = {
+        "token": api_token,
+        "user": user_key,
+        "message": message
+    }
+    
+    if title:
+        data["title"] = title
+    if url:
+        data["url"] = url
+        
+    files = {}
+    if image_url:
+        try:
+            # We must download the image bytes because Pushover requires the file itself,
+            # it cannot fetch from a URL on its own.
+            img_response = requests.get(image_url, timeout=5)
+            if img_response.status_code == 200:
+                # ("filename", file_bytes, "mime_type")
+                files["attachment"] = ("show_image.jpg", img_response.content, "image/jpeg")
+        except Exception as e:
+            logger.error(f"Failed to download image for Pushover: {e}")
+
+    try:
+        # If files is provided, requests sends a multipart/form-data request
+        response = requests.post("https://api.pushover.net/1/messages.json", data=data, files=files if files else None)
+        response.raise_for_status()
+        logger.info(f"Pushover notification sent: {title}")
+    except Exception as e:
+        logger.error(f"Failed to send Pushover notification: {e}")
+
 # Initialize Discord bot with necessary intents and application commands
 intents = discord.Intents.default()
 intents.guilds = True
@@ -253,6 +293,15 @@ async def notify_users_about_new_shows(new_shows):
 			embed.set_image(url=show_info['image_url'])
 		
 		await send_discord_message(embeds=[embed])
+
+		# Send Pushover notification
+		send_pushover_notification(
+			message=f"New HouseSeats Show: {show_info['name']}",
+			title="Ticket Genie Alert",
+			url=show_info['url'],
+			image_url=show_info.get('image_url')
+		)
+
 		logger.info(f"Posted HouseSeats show to channel: {show_info['name']}")
 		# Add a short delay to respect rate limits
 		await asyncio.sleep(1)
