@@ -494,14 +494,14 @@ async def fillaseat_task():
 			else:
 				logger.info("No new shows found in this cycle")
 
+		except Exception as e:
+			logger.error(f"An error occurred in fillaseat_task: {e}", exc_info=True)
+			await send_discord_message(f"Error in FillASeat bot: {e}")
+
 	else:
 		logger.info(f"Outside operating hours (current: {current_time.hour}:00 PST), skipping scrape")
-			
-	except Exception as e:
-		logger.error(f"An error occurred in fillaseat_task: {e}", exc_info=True)
-		await send_discord_message(f"Error in FillASeat bot: {e}")
-	finally:
-		logger.info("FillASeat task cycle completed")
+
+	logger.info("FillASeat task cycle completed")
 
 @fillaseat_task.before_loop
 async def before_fillaseat_task():
