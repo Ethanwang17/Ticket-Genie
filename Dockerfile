@@ -19,11 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create a directory for persistent data (cookies)
-RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
-
 # Create a non-root user
-RUN adduser --disabled-password --gecos '' appuser && chown -R appuser:appuser /app
+RUN adduser --disabled-password --gecos '' appuser
+
+# Create a directory for persistent data (cookies) and set ownership
+RUN mkdir -p /app/data && chown -R appuser:appuser /app && chown -R appuser:appuser /app/data
+
 USER appuser
 
 # Define a volume for persistence
