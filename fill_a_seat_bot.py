@@ -659,5 +659,6 @@ async def on_resumed():
 # Start the task and run the bot
 logger.info("Starting FillASeat periodic task...")
 fillaseat_task.start()
-logger.info("Starting FillASeat Discord bot...")
-bot.run(DISCORD_BOT_TOKEN)
+if __name__ == "__main__":
+	logger.info("Starting FillASeat Discord bot...")
+	bot.run(DISCORD_BOT_TOKEN)

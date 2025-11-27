@@ -524,5 +524,6 @@ async def current_shows(ctx):
 		await ctx.respond("An error occurred while fetching the shows.", ephemeral=True)
 
 # Run the bot
-logger.info("Starting HouseSeats Discord bot...")
-bot.run(DISCORD_BOT_TOKEN)
+if __name__ == "__main__":
+	logger.info("Starting HouseSeats Discord bot...")
+	bot.run(DISCORD_BOT_TOKEN)
