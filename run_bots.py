@@ -36,6 +36,14 @@ try:
 	logger.info("Importing required modules...")
 	import threading
 	import time
+	import asyncio
+	
+	# Fix for macOS asyncio loop issues if running locally
+	if sys.platform == 'darwin':
+		try:
+			asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+		except Exception:
+			pass
 	
 	logger.info("Importing bot modules...")
 	import house_seats_bot

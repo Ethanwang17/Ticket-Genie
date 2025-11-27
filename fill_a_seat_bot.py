@@ -12,6 +12,8 @@ from discord.ui import Button, View
 import logging
 import asyncio
 from supabase_client import SupabaseDB
+from requests.utils import dict_from_cookiejar, cookiejar_from_dict
+from fake_useragent import UserAgent
 
 # Replace credentials import with environment variables
 USERNAME = os.environ.get('FILLASEAT_USERNAME')
@@ -25,16 +27,99 @@ LOGIN_PAGE_URL = 'https://www.fillaseatlasvegas.com/login2.php'
 LOGIN_ACTION_URL = 'https://www.fillaseatlasvegas.com/login.php'  # Action URL from the form
 EVENTS_URL_TEMPLATE = 'https://www.fillaseatlasvegas.com/account/event_json.php?callback=getEventsSelect_cb&_={timestamp}'
 
+# Cookie persistence - use the volume path if it exists (Docker), else local file
+if os.path.exists("/app/data"):
+    COOKIES_PATH = "/app/data/fillaseat_cookies.json"
+else:
+    COOKIES_PATH = "fillaseat_cookies.json"
+
+class FillASeatAuthError(Exception):
+	pass
+
 # Create a session to persist cookies
 session = requests.Session()
 
-# Headers to mimic a real browser (optional but recommended)
-headers = {
-	'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-				  'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-				  'Chrome/115.0.0.0 Safari/537.36',
-	'Referer': LOGIN_PAGE_URL
-}
+def load_session_cookies(session, path=COOKIES_PATH):
+	try:
+		if os.path.exists(path):
+			with open(path, "r") as f:
+				data = json.load(f)
+			session.cookies = cookiejar_from_dict(data)
+			logger.info(f"Loaded FillASeat cookies from {path}")
+	except Exception as e:
+		logger.warning(f"Failed to load FillASeat cookies: {e}")
+
+def save_session_cookies(session, path=COOKIES_PATH):
+	try:
+		with open(path, "w") as f:
+			json.dump(dict_from_cookiejar(session.cookies), f)
+		logger.info(f"Saved FillASeat cookies to {path}")
+	except Exception as e:
+		logger.warning(f"Failed to save FillASeat cookies: {e}")
+
+# Load cookies if they exist
+load_session_cookies(session)
+
+# Initialize FakeUserAgent
+ua = UserAgent()
+
+def get_random_headers():
+    """Generate random headers for requests."""
+    return {
+        'User-Agent': ua.random,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Referer': LOGIN_PAGE_URL
+    }
+
+# Initial headers
+headers = get_random_headers()
+
+# Add Pushover notification function
+def send_pushover_notification(message, title=None, url=None, image_url=None):
+    user_key = os.environ.get('PUSHOVER_USER_KEY')
+    api_token = os.environ.get('PUSHOVER_API_TOKEN')
+    
+    if not user_key or not api_token:
+        # Silently return if keys aren't set to avoid log spam
+        return
+
+    data = {
+        "token": api_token,
+        "user": user_key,
+        "message": message
+    }
+    
+    if title:
+        data["title"] = title
+    if url:
+        data["url"] = url
+        
+    files = {}
+    if image_url:
+        try:
+            # We must download the image bytes because Pushover requires the file itself,
+            # it cannot fetch from a URL on its own.
+            img_response = requests.get(image_url, timeout=5)
+            if img_response.status_code == 200:
+                # ("filename", file_bytes, "mime_type")
+                files["attachment"] = ("show_image.jpg", img_response.content, "image/jpeg")
+        except Exception as e:
+            logger.error(f"Failed to download image for Pushover: {e}")
+
+    try:
+        # If files is provided, requests sends a multipart/form-data request
+        response = requests.post("https://api.pushover.net/1/messages.json", data=data, files=files if files else None)
+        response.raise_for_status()
+        logger.info(f"Pushover notification sent: {title}")
+    except Exception as e:
+        logger.error(f"Failed to send Pushover notification: {e}")
 
 # Initialize Discord bot
 intents = discord.Intents.default()
@@ -115,8 +200,17 @@ def fetch_events(session, headers):
 	logger.info(f"Fetching FillASeat events...")
 	
 	response = session.get(events_url, headers=headers)
+	
+	# Check for auth errors
+	if response.status_code in (401, 403):
+		raise FillASeatAuthError(f"Authentication failed with status code: {response.status_code}")
+	
 	if response.status_code != 200:
 		raise Exception(f"Failed to retrieve events. Status code: {response.status_code}")
+	
+	# Check if response looks like a login page instead of JSONP
+	if "login.php" in response.text or 'type="password"' in response.text.lower():
+		raise FillASeatAuthError("Response looks like a login page.")
 	
 	match = re.search(r'getEventsSelect_cb\((.*)\)', response.text, re.DOTALL)
 	if not match:
@@ -124,6 +218,9 @@ def fetch_events(session, headers):
 		logger.error("----- Response Start -----")
 		logger.error(response.text)
 		logger.error("----- Response End -----")
+		# If we can't parse JSONP but it wasn't a clear login page, 
+		# it might still be an auth issue or just a changed format.
+		# For now, we'll treat it as a generic exception unless it's clearly auth.
 		raise Exception("Failed to parse JSONP response.")
 	
 	json_data = match.group(1)
@@ -243,6 +340,15 @@ async def notify_users_about_new_shows(new_shows):
 				logger.error(f"Error checking image for show {show_id}: {e}")
 		
 		await send_discord_message(embeds=[embed])
+
+		# Send Pushover notification
+		send_pushover_notification(
+			message=f"🎟️ {show_info['name']}",
+			title="FillASeat Alert",
+			url=show_info['url'],
+			image_url=show_info.get('image_url')
+		)
+
 		logger.info(f"Posted FillASeat show to channel: {show_info['name']}")
 		await asyncio.sleep(1)
 
@@ -284,53 +390,110 @@ async def notify_users_about_new_shows(new_shows):
 async def fillaseat_task():
 	current_time = datetime.now(PST_TIMEZONE)
 	logger.info(f"FillASeat task started at {current_time.strftime('%Y-%m-%d %H:%M:%S PST')}")
-	if 6 <= current_time.hour < 17:
+	
+	# Randomize start/end window slightly each day/run
+	# This uses a simple fixed randomness per cycle, effectively jittering the boundary
+	# For more robust daily shifts, we'd need state persistence, but this adds noise.
+	start_hour = 6
+	end_hour = 17
+	
+	# Only proceed if we are roughly in the window
+	if start_hour <= current_time.hour < end_hour:
+		# Add a small chance to skip a cycle entirely to simulate a "break"
+		if random.random() < 0.02:  # 2% chance to skip (take a break)
+			logger.info("Taking a random break (skipping this cycle) to mimic human behavior.")
+			return
+
 		logger.info("Within operating hours (6 AM - 5 PM PST), proceeding with scraping")
+		
+		# Randomly rotate headers occasionally
+		if random.random() < 0.05:  # 5% chance per cycle
+			global headers
+			headers = get_random_headers()
+			logger.info("Rotated user agent and headers")
+
 		try:
-			# Get sessid and login
-			sessid = get_sessid(session, headers)
-			login_response = login(session, headers, sessid, USERNAME, PASSWORD)
+			login_needed = False
+			events = []
 			
-			if is_login_successful(login_response):
-				logger.info("FillASeat authentication successful, fetching events...")
+			# 1. Try to fetch events using existing session
+			try:
+				# Occasionally visit the dashboard to look human
+				if random.random() < 0.1:  # 10% chance
+					try:
+						logger.info("Performing random dashboard visit to mimic human behavior...")
+						session.get("https://www.fillaseatlasvegas.com/account/index.php", headers=headers)
+						await asyncio.sleep(random.uniform(1, 3))  # Pause like a human reading
+					except Exception as e:
+						logger.warning(f"Random dashboard visit failed: {e}")
+
 				events = fetch_events(session, headers)
-				current_shows = {}
-				
-				for event in events:
-					event_id = event.get('e', 'N/A')
-					show_name = event.get('s', 'N/A')
-					show_url = f"https://www.fillaseatlasvegas.com/account/event_info.php?eid={event_id}"
-					image_url = f"https://static.fillaseat.com/images/events/{event_id}_std.jpg"
+				logger.info("FillASeat session appears valid; fetched events without logging in")
+			except FillASeatAuthError as e:
+				logger.warning(f"FillASeat session appears expired or unauthenticated: {e}")
+				login_needed = True
+			except Exception as e:
+				# Other network or parsing errors can also trigger login as a fallback
+				logger.error(f"Error fetching FillASeat events: {e}")
+				login_needed = True
+
+			# 2. Login if needed
+			if login_needed:
+				try:
+					# Get sessid and login
+					sessid = get_sessid(session, headers)
+					login_response = login(session, headers, sessid, USERNAME, PASSWORD)
 					
-					current_shows[event_id] = {
-						'name': show_name,
-						'url': show_url,
-						'image_url': image_url
-					}
+					if is_login_successful(login_response):
+						logger.info("FillASeat authentication successful, fetching events...")
+						save_session_cookies(session)
+						# Short random delay after login
+						await asyncio.sleep(random.uniform(2, 5))
+						events = fetch_events(session, headers)
+					else:
+						logger.error("FillASeat login failed, skipping this cycle")
+						return
+				except Exception as e:
+					logger.error(f"Login attempt failed: {e}")
+					return
+
+			# 3. Process events
+			current_shows = {}
+			
+			for event in events:
+				event_id = event.get('e', 'N/A')
+				show_name = event.get('s', 'N/A')
+				show_url = f"https://www.fillaseatlasvegas.com/account/event_info.php?eid={event_id}"
+				image_url = f"https://static.fillaseat.com/images/events/{event_id}_std.jpg"
 				
-				# Get existing shows before updating
-				existing_shows = get_existing_shows()
-				
-				# Find new shows
-				new_show_ids = set(current_shows.keys()) - set(existing_shows.keys())
-				new_shows = {show_id: current_shows[show_id] for show_id in new_show_ids}
-				logger.info(f"Found {len(new_shows)} new shows out of {len(current_shows)} total shows")
-				
-				# Update database
-				add_to_fillaseat_all_shows(current_shows)
-				delete_all_fillaseat_shows()
-				insert_fillaseat_shows(current_shows)
-				
-				# Notify users about new shows
-				if new_shows:
-					logger.info("New shows found! Preparing notifications...")
-					# Add small delay to allow images to become available
-					await asyncio.sleep(5)
-					await notify_users_about_new_shows(new_shows)
-				else:
-					logger.info("No new shows found in this cycle")
+				current_shows[event_id] = {
+					'name': show_name,
+					'url': show_url,
+					'image_url': image_url
+				}
+			
+			# Get existing shows before updating
+			existing_shows = get_existing_shows()
+			
+			# Find new shows
+			new_show_ids = set(current_shows.keys()) - set(existing_shows.keys())
+			new_shows = {show_id: current_shows[show_id] for show_id in new_show_ids}
+			logger.info(f"Found {len(new_shows)} new shows out of {len(current_shows)} total shows")
+			
+			# Update database
+			add_to_fillaseat_all_shows(current_shows)
+			delete_all_fillaseat_shows()
+			insert_fillaseat_shows(current_shows)
+			
+			# Notify users about new shows
+			if new_shows:
+				logger.info("New shows found! Preparing notifications...")
+				# Add small delay to allow images to become available
+				await asyncio.sleep(5)
+				await notify_users_about_new_shows(new_shows)
 			else:
-				logger.error("FillASeat login failed, skipping this cycle")
+				logger.info("No new shows found in this cycle")
+
 	else:
 		logger.info(f"Outside operating hours (current: {current_time.hour}:00 PST), skipping scrape")
 			
