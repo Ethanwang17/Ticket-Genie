@@ -26,9 +26,6 @@ PST_TIMEZONE = pytz.timezone('America/Los_Angeles')
 if not USERNAME or not PASSWORD:
 	import logging
 	logging.error("FILLASEAT_USERNAME or FILLASEAT_PASSWORD environment variables are not set!")
-else:
-	import logging
-	logging.info(f"FillASeat credentials loaded - Username: {USERNAME[:3]}*** (length: {len(USERNAME)}), Password length: {len(PASSWORD)}")
 
 # URLs
 LOGIN_PAGE_URL = 'https://www.fillaseatlasvegas.com/login2.php'
@@ -163,14 +160,12 @@ def get_sessid(session, headers):
 		raise Exception("Failed to find sessid in the login form.")
 	
 	sessid = match.group(1)
-	logger.info(f"Successfully retrieved sessid: {sessid[:8]}...")
 	return sessid
 
 def login(session, headers, sessid, username, password):
 	"""
 	Submit the login form with the provided credentials and sessid.
 	"""
-	logger.info("Attempting to login to FillASeat...")
 	payload = {
 		'sessid': sessid,
 		'username': username,
@@ -180,48 +175,42 @@ def login(session, headers, sessid, username, password):
 	
 	response = session.post(LOGIN_ACTION_URL, data=payload, headers=headers)
 	if response.status_code != 200:
-		logger.error(f"Login request failed. Status code: {response.status_code}")
+		logger.error(f"FillASeat login request failed. Status code: {response.status_code}")
 		raise Exception(f"Login request failed. Status code: {response.status_code}")
 	
-	logger.info("Login request completed successfully")
 	return response
 
 def is_login_successful(response):
 	"""
 	Determine if login was successful by checking for indicators in the response.
 	"""
-	# Log response details for debugging
-	logger.info(f"Login response status: {response.status_code}")
-	logger.info(f"Login response URL: {response.url}")
-	logger.info(f"Login response length: {len(response.text)} characters")
-	
 	# Check for error parameter in URL (FillASeat redirects to login2.php?error1=1 on failure)
 	if "error1=1" in response.url or "error" in response.url.lower():
-		logger.error("FillASeat login failed - error parameter in URL (invalid username/password)")
+		logger.error("FillASeat login failed - invalid username/password")
 		return False
 	
 	# Check for various success indicators
 	response_lower = response.text.lower()
 	
 	if "logout.php" in response_lower:
-		logger.info("FillASeat login successful - logout link found")
+		logger.info("FillASeat login successful")
 		return True
 	
 	# Check for error messages that indicate failed login
 	if "invalid username or password" in response_lower:
-		logger.error("FillASeat login failed - invalid credentials message in response")
+		logger.error("FillASeat login failed - invalid credentials")
 		return False
 	
 	if "login" in response_lower and "password" in response_lower:
-		logger.warning("FillASeat login may have failed - still seeing login form")
+		logger.warning("FillASeat login failed - still seeing login form")
 		return False
 	
 	# If we can't find logout link but also no clear error, check if we got redirected to account page
 	if "account" in response.url.lower() or "/account/" in response.url:
-		logger.info("FillASeat login successful - redirected to account page")
+		logger.info("FillASeat login successful")
 		return True
 	
-	logger.warning("FillASeat login status unclear - no clear success or failure indicators")
+	logger.warning("FillASeat login status unclear")
 	return False
 
 def fetch_events(session, headers):
@@ -230,8 +219,6 @@ def fetch_events(session, headers):
 	"""
 	timestamp = int(time.time() * 1000)
 	events_url = EVENTS_URL_TEMPLATE.format(timestamp=timestamp)
-	
-	logger.info(f"Fetching FillASeat events...")
 	
 	response = session.get(events_url, headers=headers)
 	
@@ -466,12 +453,10 @@ async def fillaseat_task():
 				# If we get 0 events, the session might be stale even though it didn't error
 				# Force a fresh login to verify
 				if len(events) == 0:
-					logger.warning("Received 0 events - session may be stale, forcing fresh login")
+					logger.info("Received 0 events - attempting fresh login")
 					login_needed = True
-				else:
-					logger.info("FillASeat session appears valid; fetched events without logging in")
 			except FillASeatAuthError as e:
-				logger.warning(f"FillASeat session appears expired or unauthenticated: {e}")
+				logger.info(f"FillASeat session expired, logging in")
 				login_needed = True
 			except Exception as e:
 				# Other network or parsing errors can also trigger login as a fallback
@@ -486,7 +471,6 @@ async def fillaseat_task():
 					login_response = login(session, headers, sessid, USERNAME, PASSWORD)
 					
 					if is_login_successful(login_response):
-						logger.info("FillASeat authentication successful, fetching events...")
 						save_session_cookies(session)
 						# Short random delay after login
 						await asyncio.sleep(random.uniform(2, 5))
