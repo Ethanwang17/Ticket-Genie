@@ -42,6 +42,11 @@ try:
 		except Exception:
 			pass
 	
+	# Create and set the event loop BEFORE importing bot modules
+	# This ensures the bots use the correct loop from the start
+	loop = asyncio.new_event_loop()
+	asyncio.set_event_loop(loop)
+	
 	logger.info("Importing bot modules...")
 	import house_seats_bot
 	import fill_a_seat_bot
@@ -70,13 +75,16 @@ try:
 
 	if __name__ == "__main__":
 		try:
-			asyncio.run(main())
+			loop.run_until_complete(main())
 		except KeyboardInterrupt:
 			logger.info("Received shutdown signal (Ctrl+C). Exiting...")
 		except Exception as e:
 			logger.critical(f"Fatal error during startup: {e}", exc_info=True)
 			logger.critical("Bot runner failed to start - exiting with code 1")
 			sys.exit(1)
+		finally:
+			logger.info("Cleaning up...")
+			loop.close()
 
 except Exception as e:
 	logger.critical(f"Fatal error during import or setup: {e}", exc_info=True)
