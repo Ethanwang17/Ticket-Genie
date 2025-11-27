@@ -31,7 +31,7 @@ logger.info("HouseSeats Bot initializing...")
 # Add Pushover notification function
 def send_pushover_notification(message, title=None, url=None, image_url=None):
     user_key = os.environ.get('PUSHOVER_USER_KEY')
-    api_token = os.environ.get('PUSHOVER_API_TOKEN')
+    api_token = os.environ.get('HOUSESEATS_PUSHOVER_API_TOKEN')
     
     if not user_key or not api_token:
         # Silently return if keys aren't set to avoid log spam
@@ -296,8 +296,8 @@ async def notify_users_about_new_shows(new_shows):
 
 		# Send Pushover notification
 		send_pushover_notification(
-			message=f"🎟️ {show_info['name']}",
-			title="Ticket Genie Alert",
+			message=f"{show_info['name']}",
+			title="🎟️ House Seats Alert",
 			url=show_info['url'],
 			image_url=show_info.get('image_url')
 		)
