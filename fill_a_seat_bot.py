@@ -28,7 +28,7 @@ if not USERNAME or not PASSWORD:
 	logging.error("FILLASEAT_USERNAME or FILLASEAT_PASSWORD environment variables are not set!")
 else:
 	import logging
-	logging.info(f"FillASeat credentials loaded - Username: {USERNAME[:3]}*** (length: {len(USERNAME)})")
+	logging.info(f"FillASeat credentials loaded - Username: {USERNAME[:3]}*** (length: {len(USERNAME)}), Password length: {len(PASSWORD)}")
 
 # URLs
 LOGIN_PAGE_URL = 'https://www.fillaseatlasvegas.com/login2.php'
@@ -195,6 +195,11 @@ def is_login_successful(response):
 	logger.info(f"Login response URL: {response.url}")
 	logger.info(f"Login response length: {len(response.text)} characters")
 	
+	# Check for error parameter in URL (FillASeat redirects to login2.php?error1=1 on failure)
+	if "error1=1" in response.url or "error" in response.url.lower():
+		logger.error("FillASeat login failed - error parameter in URL (invalid username/password)")
+		return False
+	
 	# Check for various success indicators
 	response_lower = response.text.lower()
 	
@@ -204,14 +209,11 @@ def is_login_successful(response):
 	
 	# Check for error messages that indicate failed login
 	if "invalid username or password" in response_lower:
-		logger.error("FillASeat login failed - invalid credentials")
+		logger.error("FillASeat login failed - invalid credentials message in response")
 		return False
 	
 	if "login" in response_lower and "password" in response_lower:
 		logger.warning("FillASeat login may have failed - still seeing login form")
-		# Log a snippet of the response to help debug
-		snippet = response.text[:500] if len(response.text) > 500 else response.text
-		logger.debug(f"Response snippet: {snippet}")
 		return False
 	
 	# If we can't find logout link but also no clear error, check if we got redirected to account page
