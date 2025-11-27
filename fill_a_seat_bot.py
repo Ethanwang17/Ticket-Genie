@@ -22,6 +22,14 @@ DISCORD_BOT_TOKEN = os.environ.get('FILLASEAT_DISCORD_BOT_TOKEN')
 DISCORD_CHANNEL_ID = int(os.environ.get('FILLASEAT_DISCORD_CHANNEL_ID'))
 PST_TIMEZONE = pytz.timezone('America/Los_Angeles')
 
+# Verify credentials are set (log at module initialization)
+if not USERNAME or not PASSWORD:
+	import logging
+	logging.error("FILLASEAT_USERNAME or FILLASEAT_PASSWORD environment variables are not set!")
+else:
+	import logging
+	logging.info(f"FillASeat credentials loaded - Username: {USERNAME[:3]}*** (length: {len(USERNAME)})")
+
 # URLs
 LOGIN_PAGE_URL = 'https://www.fillaseatlasvegas.com/login2.php'
 LOGIN_ACTION_URL = 'https://www.fillaseatlasvegas.com/login.php'  # Action URL from the form
@@ -182,12 +190,36 @@ def is_login_successful(response):
 	"""
 	Determine if login was successful by checking for indicators in the response.
 	"""
-	# Example: Check if the response contains a logout link or specific user content
-	if "logout.php" in response.text.lower():
+	# Log response details for debugging
+	logger.info(f"Login response status: {response.status_code}")
+	logger.info(f"Login response URL: {response.url}")
+	logger.info(f"Login response length: {len(response.text)} characters")
+	
+	# Check for various success indicators
+	response_lower = response.text.lower()
+	
+	if "logout.php" in response_lower:
 		logger.info("FillASeat login successful - logout link found")
 		return True
-	# Add more checks as needed based on the website's response after login
-	logger.warning("FillASeat login may have failed - logout link not found")
+	
+	# Check for error messages that indicate failed login
+	if "invalid username or password" in response_lower:
+		logger.error("FillASeat login failed - invalid credentials")
+		return False
+	
+	if "login" in response_lower and "password" in response_lower:
+		logger.warning("FillASeat login may have failed - still seeing login form")
+		# Log a snippet of the response to help debug
+		snippet = response.text[:500] if len(response.text) > 500 else response.text
+		logger.debug(f"Response snippet: {snippet}")
+		return False
+	
+	# If we can't find logout link but also no clear error, check if we got redirected to account page
+	if "account" in response.url.lower() or "/account/" in response.url:
+		logger.info("FillASeat login successful - redirected to account page")
+		return True
+	
+	logger.warning("FillASeat login status unclear - no clear success or failure indicators")
 	return False
 
 def fetch_events(session, headers):
