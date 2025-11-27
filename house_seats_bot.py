@@ -296,7 +296,7 @@ async def notify_users_about_new_shows(new_shows):
 
 		# Send Pushover notification
 		send_pushover_notification(
-			message=f"New HouseSeats Show: {show_info['name']}",
+			message=f"🎟️ {show_info['name']}",
 			title="Ticket Genie Alert",
 			url=show_info['url'],
 			image_url=show_info.get('image_url')
