@@ -643,6 +643,10 @@ async def on_ready():
 	logger.info(f"Bot is connected to {len(bot.guilds)} guild(s)")
 	for guild in bot.guilds:
 		logger.info(f"  - {guild.name} (ID: {guild.id}) - {guild.member_count} members")
+	
+	if not fillaseat_task.is_running():
+		logger.info("Starting FillASeat periodic task...")
+		fillaseat_task.start()
 
 @bot.event
 async def on_connect():
@@ -657,8 +661,8 @@ async def on_resumed():
 	logger.info("FillASeat Bot resumed connection to Discord")
 
 # Start the task and run the bot
-logger.info("Starting FillASeat periodic task...")
-fillaseat_task.start()
+# logger.info("Starting FillASeat periodic task...")
+# fillaseat_task.start()
 if __name__ == "__main__":
 	logger.info("Starting FillASeat Discord bot...")
 	bot.run(DISCORD_BOT_TOKEN)

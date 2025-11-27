@@ -383,6 +383,10 @@ async def on_ready():
 	logger.info(f"Bot is connected to {len(bot.guilds)} guild(s)")
 	for guild in bot.guilds:
 		logger.info(f"  - {guild.name} (ID: {guild.id}) - {guild.member_count} members")
+	
+	if not scraping_task.is_running():
+		logger.info("Starting HouseSeats periodic scraping task...")
+		scraping_task.start()
 
 @bot.event
 async def on_connect():
@@ -397,8 +401,8 @@ async def on_resumed():
 	logger.info("HouseSeats Bot resumed connection to Discord")
 
 # Start the task when the bot is ready
-logger.info("Starting HouseSeats periodic scraping task...")
-scraping_task.start()
+# logger.info("Starting HouseSeats periodic scraping task...")
+# scraping_task.start()
 
 @bot.slash_command(name="blacklist_add", description="Add a show to your blacklist")
 async def blacklist_add(ctx, show_id: str = discord.Option(description="Show ID to blacklist")):
