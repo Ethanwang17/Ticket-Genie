@@ -428,7 +428,14 @@ async def fillaseat_task():
 						logger.warning(f"Random dashboard visit failed: {e}")
 
 				events = fetch_events(session, headers)
-				logger.info("FillASeat session appears valid; fetched events without logging in")
+				
+				# If we get 0 events, the session might be stale even though it didn't error
+				# Force a fresh login to verify
+				if len(events) == 0:
+					logger.warning("Received 0 events - session may be stale, forcing fresh login")
+					login_needed = True
+				else:
+					logger.info("FillASeat session appears valid; fetched events without logging in")
 			except FillASeatAuthError as e:
 				logger.warning(f"FillASeat session appears expired or unauthenticated: {e}")
 				login_needed = True
