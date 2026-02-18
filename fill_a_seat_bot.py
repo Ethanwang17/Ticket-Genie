@@ -15,6 +15,14 @@ from supabase_client import SupabaseDB
 from requests.utils import dict_from_cookiejar, cookiejar_from_dict
 from fake_useragent import UserAgent
 
+logging.basicConfig(
+	level=logging.INFO,
+	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+	datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+logger.info("FillASeat Bot initializing...")
+
 # Replace credentials import with environment variables
 USERNAME = os.environ.get('FILLASEAT_USERNAME')
 PASSWORD = os.environ.get('FILLASEAT_PASSWORD')
@@ -131,15 +139,6 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 bot = discord.Bot(intents=intents)
-
-# Add logging configuration
-logging.basicConfig(
-	level=logging.INFO,
-	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-	datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-logger.info("FillASeat Bot initializing...")
 
 # Initialize Supabase DB
 logger.info("Connecting to Supabase database...")
